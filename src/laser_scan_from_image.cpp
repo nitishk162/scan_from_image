@@ -15,17 +15,19 @@
 #include <map>
 #include <math.h>
 #include <sensor_msgs/LaserScan.h>
+#include <ros/package.h>
+
 using namespace std;
 using namespace cv;
 //TODO: add check if particular beam is present or not within scan angle
-int scan_beams = 628;
+
+int scan_beams;
 double dist_resolution, max_scan_angle, min_scan_angle, scan_resolution, max_invalid_range, max_range;
 std::string frame_id;
 bool test_with_mouse_click;
 long int seq_id = 0;
 std::map<uint16_t, float> scan;
-Mat input_image = imread("/home/nitish/catkin_ws/map.pgm",CV_LOAD_IMAGE_GRAYSCALE); 
-Mat image = input_image.clone();  
+Mat input_image,image;
 void mouse_click_callback();
 sensor_msgs::LaserScan get_scan_from_image(int col, int row);
 ros::Publisher scan_pub;
@@ -114,8 +116,9 @@ int main(int argc, char **argv)
 {
      ros::init(argc, argv, "listener");
      ros::NodeHandle nh;
+     std::string map_name;
      scan_pub = nh.advertise<sensor_msgs::LaserScan>("/scan",1);
-     
+     //Loading laser scan information
      nh.param("/scan_params/min_scan_angle", min_scan_angle, -M_PI );
      nh.param("/scan_params/max_scan_angle", max_scan_angle, M_PI);
      nh.param("/scan_params/max_range", max_range, 30.0);
@@ -125,6 +128,28 @@ int main(int argc, char **argv)
      nh.param("/scan_params/frame_id", frame_id, std::string("laser"));
      scan_resolution= (max_scan_angle - min_scan_angle)/scan_beams ;
      dist_resolution = 0.05;
+     std::vector<double> origin;
+     if(!nh.getParam("/map_data/origin",origin))
+     {
+          ROS_ERROR("cant find the parameters of the map");
+          return 0;
+     }
+     if (!nh.getParam("/map_data/resolution",dist_resolution))
+     {
+          ROS_ERROR("cant find the parameters of the map");
+          return 0;
+     }
+     if (!nh.getParam("/map_data/image",map_name))
+     {
+          ROS_ERROR("cant find the parameters of the map");
+          return 0;
+     }
+     std::string image_location = ros::package::getPath("scan_from_image");
+     image_location = image_location + "/launch/"+map_name;
+     ROS_INFO("image_location is:%s", image_location.c_str());
+     input_image = imread(image_location.c_str(), CV_LOAD_IMAGE_GRAYSCALE); 
+     image = input_image.clone(); 
+
      for (uint16_t i = 0; i < scan_beams; ++i)
      {
           scan[i]=max_invalid_range;
