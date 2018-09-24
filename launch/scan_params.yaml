@@ -1,0 +1,7 @@
+max_scan_angle: 3.14159265359
+min_scan_angle: -3.14159265359
+max_range: 30.0
+max_invalid_range: 1048.0
+scan_beams: 628
+test_with_mouse_click: True
+frame_id: "laser"

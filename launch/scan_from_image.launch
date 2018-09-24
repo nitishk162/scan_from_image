@@ -1,0 +1,7 @@
+<launch>
+<node pkg="scan_from_image" type="laser_scan_from_image" name="laser_scan_from_image" output="screen">
+<!--rosparam file="$(find scan_from_image)/launch/map.yaml" command="load" ns="/map_data"/-->
+<rosparam file="$(find scan_from_image)/launch/scan_params.yaml" command="load" ns="/scan_params"/>
+</node>
+
+</launch>
