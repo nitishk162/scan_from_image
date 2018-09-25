@@ -17,12 +17,11 @@
 #include <sensor_msgs/LaserScan.h>
 #include <ros/package.h>
 
-using namespace std;
 using namespace cv;
 //TODO: add check if particular beam is present or not within scan angle
 
 int scan_beams;
-double dist_resolution, max_scan_angle, min_scan_angle, scan_resolution, max_invalid_range, max_range;
+double dist_resolution, fov, scan_resolution, max_invalid_range, max_range;
 std::string frame_id;
 bool test_with_mouse_click;
 long int seq_id = 0;
@@ -31,7 +30,6 @@ Mat input_image,image;
 void mouse_click_callback();
 sensor_msgs::LaserScan get_scan_from_image(int col, int row);
 ros::Publisher scan_pub;
-std_msgs::Float32 msg1,msg2;
 std::vector<double> distances;
 
 void CallBackFunc(int event, int x, int y, int flags, void* userdata)
@@ -51,6 +49,18 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
 sensor_msgs::LaserScan get_scan_from_image(int col, int row)
 {
      seq_id++;
+     sensor_msgs::LaserScan laser_scan;
+     laser_scan.header.seq = seq_id;
+     laser_scan.header.stamp = ros::Time::now();
+     laser_scan.header.frame_id = frame_id;
+     laser_scan.angle_min = -fov/2;
+     laser_scan.angle_max = fov/2;
+     laser_scan.angle_increment = (laser_scan.angle_max - laser_scan.angle_min)/scan_beams;
+     laser_scan.range_min = 0.0;
+     laser_scan.range_max = max_range;
+     laser_scan.ranges.resize(scan_beams);
+     laser_scan.intensities.resize(scan_beams);
+
      float r,theta;
      int pix_max_range = max_range/dist_resolution;
      int start_row, start_col, end_row, end_col;
@@ -66,15 +76,16 @@ sensor_msgs::LaserScan get_scan_from_image(int col, int row)
           {
                if(image.at<uchar>(j,i)<200)
                {
-                   r = sqrt(pow((col - i),2)+pow((row - j),2));
-                   r = r*dist_resolution;
-                   theta = atan2(col - i, row - j);
-                   uint16_t index = (theta - min_scan_angle)/scan_resolution;
-                   
+                    r = sqrt(pow((col - i),2)+pow((row - j),2));
+                    r = r*dist_resolution;
+                    theta = atan2(col - i, row - j);
+                    int index = (theta - laser_scan.angle_min)/scan_resolution;
+                    if (index < 0 || index >=scan_beams)
+                    continue; 
                   
                     float width_beam = r * scan_resolution;
                     int skip_checks = dist_resolution/width_beam;
-                    for (uint16_t k = index - skip_checks/2; k <= index + skip_checks/2; ++k)
+                    for (uint16_t k = std::max(0,index - skip_checks/2); k <= std::min(index + skip_checks/2, scan_beams); ++k)
                     {
                          if(r < scan[k] && r < max_range )
                          {
@@ -87,18 +98,7 @@ sensor_msgs::LaserScan get_scan_from_image(int col, int row)
           }
 
      }
-     sensor_msgs::LaserScan laser_scan;
 
-     laser_scan.header.seq = seq_id;
-     laser_scan.header.stamp = ros::Time::now();
-     laser_scan.header.frame_id = frame_id;
-     laser_scan.angle_min = min_scan_angle;
-     laser_scan.angle_max = max_scan_angle;
-     laser_scan.angle_increment = (laser_scan.angle_max - laser_scan.angle_min)/scan_beams;
-     laser_scan.range_min = 0.0;
-     laser_scan.range_max = max_range;
-     laser_scan.ranges.resize(scan_beams);
-     laser_scan.intensities.resize(scan_beams);
      for (uint16_t i = 0; i < scan_beams; ++i)
      {
           laser_scan.ranges[i] = scan[i];
@@ -119,15 +119,13 @@ int main(int argc, char **argv)
      std::string map_name;
      scan_pub = nh.advertise<sensor_msgs::LaserScan>("/scan",1);
      //Loading laser scan information
-     nh.param("/scan_params/min_scan_angle", min_scan_angle, -M_PI );
-     nh.param("/scan_params/max_scan_angle", max_scan_angle, M_PI);
+     nh.param("/scan_params/fov", fov, 2*M_PI );
      nh.param("/scan_params/max_range", max_range, 30.0);
      nh.param("/scan_params/max_invalid_range", max_invalid_range, 1048.0);
      nh.param("/scan_params/scan_beams", scan_beams, 628);
      nh.param("/scan_params/test_with_mouse_click", test_with_mouse_click, true);
      nh.param("/scan_params/frame_id", frame_id, std::string("laser"));
-     scan_resolution= (max_scan_angle - min_scan_angle)/scan_beams ;
-     dist_resolution = 0.05;
+     scan_resolution= (fov)/scan_beams ;
      std::vector<double> origin;
      if(!nh.getParam("/map_data/origin",origin))
      {
