@@ -12,10 +12,11 @@
 #include <math.h>
 #include <ros/package.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2/utils.h>
+#include <boost/shared_ptr.hpp>
 
-
+//TODO: add theta shift as per pose
 using namespace cv;
-//TODO: add check if particular beam is present or not within scan angle
 
 int scan_beams;
 double dist_resolution, fov, scan_resolution, max_invalid_range, max_range;
@@ -25,16 +26,14 @@ long int seq_id = 0;
 std::map<uint16_t, float> scan;
 Mat input_image,image;
 void mouse_click_callback();
-sensor_msgs::LaserScan get_scan_from_image(int col, int row);
+boost::shared_ptr<sensor_msgs::LaserScan> get_scan_from_image(int col, int row, double pose_theta);
 ros::Publisher scan_pub;
 std::vector<double> distances;
 geometry_msgs::TransformStamped image_to_map;
-double get_theta_image(int col_a, int row_a, int col_b, int row_b)
+sensor_msgs::LaserScan laser_scan;
+inline double get_theta_image(int col_a, int row_a, int col_b, int row_b)
 {
-    // row_a = -1 * row_a;// representing row as a true Y axis 
-    // row_b = -1 * row_b;
-    double angle = atan2(row_b - row_a, col_b - col_a);
-    return angle;
+   return atan2(-1*(row_b - row_a), col_b - col_a); // representing row as a true Y axis 
 
 }
 
@@ -77,26 +76,15 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
         {
             scan[i] = max_invalid_range;
         }
-        scan_pub.publish(get_scan_from_image(x,y));
+        scan_pub.publish(get_scan_from_image(x,y,0));
 
     }
 
 }
 
-sensor_msgs::LaserScan get_scan_from_image(int col, int row)
+boost::shared_ptr<sensor_msgs::LaserScan> get_scan_from_image(int col, int row, double pose_theta)
 {
-    seq_id++;
-    sensor_msgs::LaserScan laser_scan;
-    laser_scan.header.seq = seq_id;
-    laser_scan.header.stamp = ros::Time::now();
-    laser_scan.header.frame_id = frame_id;
-    laser_scan.angle_min = -fov/2;
-    laser_scan.angle_max = fov/2;
-    laser_scan.angle_increment = (laser_scan.angle_max - laser_scan.angle_min)/scan_beams;
-    laser_scan.range_min = 0.0;
-    laser_scan.range_max = max_range;
-    laser_scan.ranges.resize(scan_beams);
-    laser_scan.intensities.resize(scan_beams);
+
     float r,theta;
     int pix_max_range = max_range/dist_resolution;
     int start_row, start_col, end_row, end_col;
@@ -105,25 +93,28 @@ sensor_msgs::LaserScan get_scan_from_image(int col, int row)
     end_col = std::min(image.cols, col + pix_max_range);
     start_row = std::max(0, row - pix_max_range);
     end_row = std::min(image.rows, row + pix_max_range);
-    ROS_INFO("ROI:%d,%d,%d,%d   ,%f", start_col, end_col, start_row, end_row, dist_resolution);
+    // ROS_INFO("ROI:%d,%d,%d,%d   ,%f  total:%d", start_col, end_col, start_row, end_row, dist_resolution,(end_col-start_col)*(end_row-start_row) );
+
     for (uint16_t i = start_col; i < end_col; i++)
     {
         for (uint16_t j = start_row; j < end_row; j++)
         {
             if(image.at<uchar>(j,i)<200)
             {
-                r = sqrt(pow((col - i),2)+pow((row - j),2));
-                r = r*dist_resolution;
-                theta = get_theta_image(i, j, col, row);
+                r = sqrt(pow((col - i),2)+pow((row - j),2)) * dist_resolution;
+                if (r>max_range)
+                {
+                    continue;
+                }
+                theta = get_theta_image(col, row, i, j) + pose_theta;
                 int index = (theta - laser_scan.angle_min)/scan_resolution;
                 if (index < 0 || index >=scan_beams)
                     continue;
 
-                float width_beam = r * scan_resolution;
-                int skip_checks = dist_resolution/width_beam;
+                int skip_checks = dist_resolution/(r * scan_resolution);//width beam in denominator
                 for (uint16_t k = std::max(0,index - skip_checks/2); k <= std::min(index + skip_checks/2, scan_beams); ++k)
                 {
-                    if(r < scan[k] && r < max_range )
+                    if(r < scan[k])
                     {
                         scan[k] = r;
                     }
@@ -138,23 +129,25 @@ sensor_msgs::LaserScan get_scan_from_image(int col, int row)
     for (uint16_t i = 0; i < scan_beams; ++i)
     {
         laser_scan.ranges[i] = scan[i];
-        laser_scan.intensities[i] = i;
     }
-
-
-    return (laser_scan);
+    boost::shared_ptr<sensor_msgs::LaserScan> ptr_scan;
+    ptr_scan.reset(new sensor_msgs::LaserScan(laser_scan));
+    return (ptr_scan);
 }
 
 void pose_callback(const geometry_msgs::PoseStamped msg)
 {
-    ROS_INFO("pixel:%f ,%f",msg.pose.position.x,msg.pose.position.y);
     geometry_msgs::PoseStamped image_pose;
     tf2::doTransform(msg, image_pose, image_to_map);
     int col_pix = image_pose.pose.position.x / dist_resolution;
     int row_pix = -1 * image_pose.pose.position.y / dist_resolution;// row corresponds to negative y axis
-    ROS_INFO("pixel:%d ,%d",col_pix,row_pix);
-    ROS_INFO("pixel:%f ,%f",image_pose.pose.position.x,image_pose.pose.position.x);
-    scan_pub.publish(get_scan_from_image(col_pix,row_pix));
+    for (uint16_t i = 0; i < scan_beams; ++i)
+    {
+        scan[i] = max_invalid_range;
+    }
+    double pose_theta = tf2::getYaw(image_pose.pose.orientation);
+    // ROS_INFO("pixel:%f ,%f ,%f",image_pose.pose.position.x,image_pose.pose.position.x, pose_theta);
+    scan_pub.publish(get_scan_from_image(col_pix,row_pix,pose_theta));
 
 }
 
@@ -205,7 +198,7 @@ int main(int argc, char **argv)
     }
 
 
-    ros::Rate loop(10);
+    ros::Rate loop(5);
     if(test_with_mouse_click)
     {    
         int disp_image_size = 800;
@@ -217,6 +210,18 @@ int main(int argc, char **argv)
     }    
     image_to_map = get_transform(origin, input_image);
     image = input_image;
+
+
+    laser_scan.header.seq = seq_id;
+    laser_scan.header.stamp = ros::Time::now();
+    laser_scan.header.frame_id = frame_id;
+    laser_scan.angle_min = -fov/2;
+    laser_scan.angle_max = fov/2;
+    laser_scan.angle_increment = (laser_scan.angle_max - laser_scan.angle_min)/scan_beams;
+    laser_scan.range_min = 0.0;
+    laser_scan.range_max = max_range;
+    laser_scan.ranges.resize(scan_beams);
+    laser_scan.intensities.resize(scan_beams);
     
     while(nh.ok())
     {
