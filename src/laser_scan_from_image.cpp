@@ -76,7 +76,7 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata)
         {
             scan[i] = max_invalid_range;
         }
-        scan_pub.publish(get_scan_from_image(x,y,0));
+        scan_pub.publish(get_scan_from_image(x,y,-0.0));
 
     }
 
@@ -99,14 +99,15 @@ boost::shared_ptr<sensor_msgs::LaserScan> get_scan_from_image(int col, int row, 
     {
         for (uint16_t j = start_row; j < end_row; j++)
         {
-            if(image.at<uchar>(j,i)<200)
+            if(image.at<uchar>(j,i)<150)
             {
                 r = sqrt(pow((col - i),2)+pow((row - j),2)) * dist_resolution;
                 if (r>max_range)
                 {
                     continue;
                 }
-                theta = get_theta_image(col, row, i, j) + pose_theta;
+                theta = get_theta_image(col, row, i, j) - pose_theta;
+                theta = atan2(sin(theta), cos(theta));
                 int index = (theta - laser_scan.angle_min)/scan_resolution;
                 if (index < 0 || index >=scan_beams)
                     continue;
@@ -130,6 +131,7 @@ boost::shared_ptr<sensor_msgs::LaserScan> get_scan_from_image(int col, int row, 
     {
         laser_scan.ranges[i] = scan[i];
     }
+    laser_scan.header.stamp = ros::Time::now();
     boost::shared_ptr<sensor_msgs::LaserScan> ptr_scan;
     ptr_scan.reset(new sensor_msgs::LaserScan(laser_scan));
     return (ptr_scan);
@@ -220,6 +222,8 @@ int main(int argc, char **argv)
     laser_scan.angle_increment = (laser_scan.angle_max - laser_scan.angle_min)/scan_beams;
     laser_scan.range_min = 0.0;
     laser_scan.range_max = max_range;
+    laser_scan.scan_time = 1.0 / 5.0;
+    laser_scan.time_increment = (1.0 / 5.0) / scan_beams;
     laser_scan.ranges.resize(scan_beams);
     laser_scan.intensities.resize(scan_beams);
     
