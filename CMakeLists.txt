@@ -15,6 +15,9 @@ find_package(catkin REQUIRED COMPONENTS
   novus_pilot_diagnostics
   sensor_msgs
   cv_bridge
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
   image_transport
 )
 find_package(OpenCV)

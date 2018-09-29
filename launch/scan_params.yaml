@@ -1,4 +1,4 @@
-fov: 3.14159265359
+fov: 2*M_PI
 max_range: 30.0
 max_invalid_range: 1048.0
 scan_beams: 628
