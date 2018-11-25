@@ -161,6 +161,8 @@ int main(int argc, char **argv)
     std::string map_name;
     scan_pub = nh.advertise<sensor_msgs::LaserScan>("/scan",1);
     ros::Subscriber pose_sub = nh.subscribe("/pose_stamped", 1, &pose_callback);
+    
+
     //Loading laser scan information
     nh.param("/scan_params/fov", fov, 2*M_PI );
     nh.param("/scan_params/max_range", max_range, 30.0);

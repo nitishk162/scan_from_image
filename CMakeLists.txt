@@ -11,8 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
-  diagnostics_package
-  novus_pilot_diagnostics
   sensor_msgs
   cv_bridge
   tf2
